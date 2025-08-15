@@ -13,7 +13,7 @@ export default function CreateUserDialog({onCreated}: { onCreated: () => void })
             <DialogTrigger asChild>
                 <Button>Add User</Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="sm:max-w-3xl">
                 <VisuallyHidden>
                     <DialogTitle>Create User</DialogTitle>
                 </VisuallyHidden>

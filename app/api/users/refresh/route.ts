@@ -1,6 +1,6 @@
 import { connectDB } from "@/lib/mongodb";
 import User from "@/models/User";
-import { setCachedUsers, getCachedUsers } from "../dataCache";
+import { setCachedUsers, getCachedUsers } from "../../../../lib/utils/userCache";
 import { NextResponse } from "next/server";
 
 export async function GET() {

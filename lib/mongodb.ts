@@ -1,15 +1,29 @@
-import mongoose from "mongoose";
+// lib/mongoose.ts
+import mongoose, { Mongoose } from "mongoose";
 
-let isConnected = false;
+let cachedConnection: Mongoose | null = null;
 
-export const connectDB = async (): Promise<void> => {
-    if (isConnected) return;
+export async function connectDB(): Promise<Mongoose> {
+    const uri = process.env.MONGODB_URI;
+    if (!uri) throw new Error("Missing MONGODB_URI");
+
+    if (cachedConnection) {
+        console.log("Using cached MongoDB connection.");
+        return cachedConnection;
+    }
 
     try {
-        const conn = await mongoose.connect(process.env.MONGODB_URI as string);
-        isConnected = conn.connections[0].readyState === 1;
-        console.log("✅ MongoDB Connected");
+        const connectionInstance = await mongoose.connect(uri, {
+            maxPoolSize: 10,
+            minPoolSize: 5,
+            serverSelectionTimeoutMS: 5000,
+        });
+        cachedConnection = connectionInstance;
+        console.log(`MongoDB Connected! DB Host: ${connectionInstance.connection.host}`);
+        return connectionInstance;
     } catch (error) {
-        console.error("❌ MongoDB connection error:", error);
+        console.error("MongoDB connection error:", error);
+        // In libraries / Next.js, prefer throwing over exiting the process
+        throw error;
     }
-};
+}

@@ -1,58 +1,38 @@
+// components/users/UserUpsertForm.tsx
 "use client";
 
-import { useState } from "react";
-import { useForm, Controller } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { userSchema, UserFormData } from "@/lib/validations/userSchema";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
-import { toast } from "sonner";
-import { ShadcnDatePicker } from "@/components/shared/ShadcnDatePicker";
+import {useState} from "react";
+import {useForm, Controller, type DefaultValues} from "react-hook-form";
+import {Button} from "@/components/ui/button";
+import {Input} from "@/components/ui/input";
+import {Label} from "@/components/ui/label";
+import {Switch} from "@/components/ui/switch";
+import {ShadcnDatePicker} from "@/components/shared/ShadcnDatePicker";
+import {toast} from "sonner";
+
+import type {UserClientDAO} from "@/types/userDao.client";
+import User, {RolePosition, UserStatus, ShirtSize} from "@/models/User";
+import {SelectEnumField} from "@/components/shared/SelectEnumField";
 
 type Mode = "create" | "edit";
 
-export type ApiUser = {
-    _id: string;
-    firstName: string;
-    lastName: string;
-    rolePosition: "Department Head" | "Technician" | "Operations" | "Crew Member" | "Crew Lead";
-    graduationDate?: string | Date | null;
-    dateHired?: string | Date | null;
-    mavId: number;
-    status: "Active" | "Inactive";
-    phoneNumber?: string;
-    studentEmail?: string;
-    workEmail?: string;
-    dietaryRestrictions?: string;
-    shirtSize?: "S" | "M" | "L" | "XL" | "2XL";
-    keyRequest?: boolean;
-};
-
-function toDateOrUndefined(v: unknown): Date | undefined {
+function toDateOrUndefined(v?: string | null): Date | undefined {
     if (!v) return undefined;
-    try {
-        const d = new Date(v as any);
-        return isNaN(d.getTime()) ? undefined : d;
-    } catch {
-        return undefined;
-    }
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+function emptyToNull(v: unknown): string | null {
+    if (typeof v !== "string") return v as any;
+    return v.trim() === "" ? null : v;
 }
 
 interface Props {
     mode: Mode;
-    initial?: Partial<ApiUser>;
+    initial?: Partial<UserClientDAO>;
     onSuccess?: () => void;
     submitLabel?: string;
-    /** when true, all inputs are disabled (read-only view) */
     disabled?: boolean;
-    /** when true, hide the submit (Save) button entirely */
     hideSubmit?: boolean;
 }
 
@@ -66,45 +46,106 @@ export default function UserUpsertForm({
                                        }: Props) {
     const [loading, setLoading] = useState(false);
 
-    const form = useForm<UserFormData>({
-        resolver: zodResolver(userSchema),
-        defaultValues: {
-            firstName: initial?.firstName ?? "",
-            lastName: initial?.lastName ?? "",
-            rolePosition: (initial?.rolePosition as UserFormData["rolePosition"]) ?? "Crew Member",
-            graduationDate: toDateOrUndefined(initial?.graduationDate),
-            dateHired: toDateOrUndefined(initial?.dateHired),
-            mavId: initial?.mavId ? String(initial.mavId) : "",
-            status: (initial?.status as UserFormData["status"]) ?? "Active",
-            phoneNumber: initial?.phoneNumber ?? "",
-            studentEmail: initial?.studentEmail ?? "",
-            workEmail: initial?.workEmail ?? "",
-            dietaryRestrictions: initial?.dietaryRestrictions ?? "",
-            shirtSize: initial?.shirtSize as UserFormData["shirtSize"] | undefined,
-            keyRequest: initial?.keyRequest ?? false,
-        },
-    });
+    // Use the DAO directly for form typing
+    const defaults: DefaultValues<Partial<UserClientDAO>> = {
+        _id: initial?._id,
+        firstName: initial?.firstName ?? "",
+        lastName: initial?.lastName ?? "",
+        rolePosition: (initial?.rolePosition as RolePosition) ?? RolePosition.SetupCrew,
 
-    const onSubmit = async (data: UserFormData) => {
+        mavId: initial?.mavId ?? null,
+        w2w_employee_id: initial?.w2w_employee_id ?? "",
+        teams_id: initial?.teams_id ?? "",
+
+        status: (initial?.status as UserStatus) ?? UserStatus.Active,
+        phoneNumber: initial?.phoneNumber ?? "",
+        studentEmail: initial?.studentEmail ?? "",
+        workEmail: initial?.workEmail ?? "",
+
+        shirtSize: (initial?.shirtSize as ShirtSize) ?? undefined,
+
+        dateHired: initial?.dateHired ?? null,
+        graduationDate: initial?.graduationDate ?? null,
+        birthday: initial?.birthday ?? null,
+
+        hourlyPayRate: typeof initial?.hourlyPayRate === "number" ? initial.hourlyPayRate : null,
+        mostRecentRaiseGranted: initial?.mostRecentRaiseGranted ?? null,
+
+        dietaryRestrictions: initial?.dietaryRestrictions ?? "",
+        favorite_plant: initial?.favorite_plant ?? "",
+        address: initial?.address ?? "",
+
+        keyRequest: initial?.keyRequest ?? false,
+        has_a_second_job: initial?.has_a_second_job ?? false,
+        has_ssn: initial?.has_ssn ?? false,
+        major: initial?.major ?? "",
+    };
+
+    const form = useForm<Partial<UserClientDAO>>({defaultValues: defaults});
+
+    const onSubmit = async (data: Partial<UserClientDAO>) => {
         setLoading(true);
         try {
-            const body = {
-                ...data,
-                mavId: Number(data.mavId),
-                graduationDate: data.graduationDate ?? undefined,
-                dateHired: data.dateHired ?? undefined,
+            const body: Partial<UserClientDAO> = {
+                // strings → null if empty, keep undefined if untouched
+                firstName: emptyToNull(data.firstName) as any,
+                lastName: emptyToNull(data.lastName) as any,
+                rolePosition: (data.rolePosition as RolePosition) ?? null,
+
+                // numeric
+                mavId:
+                    typeof data.mavId === "number"
+                        ? data.mavId
+                        : data.mavId == null
+                            ? null
+                            : Number(data.mavId),
+
+                w2w_employee_id: emptyToNull(data.w2w_employee_id),
+                teams_id: emptyToNull(data.teams_id),
+
+                status: (data.status as UserStatus) ?? null,
+                phoneNumber: emptyToNull(data.phoneNumber),
+                studentEmail: emptyToNull(data.studentEmail),
+                workEmail: emptyToNull(data.workEmail),
+
+                shirtSize: (data.shirtSize as ShirtSize) ?? null,
+
+                // DatePickers convert here: Date -> ISO (form keeps ISO/null)
+                dateHired: data.dateHired ?? null,
+                graduationDate: data.graduationDate ?? null,
+                birthday: data.birthday ?? null,
+                mostRecentRaiseGranted: data.mostRecentRaiseGranted ?? null,
+
+                hourlyPayRate:
+                    typeof data.hourlyPayRate === "number"
+                        ? data.hourlyPayRate
+                        : data.hourlyPayRate == null
+                            ? null
+                            : Number(data.hourlyPayRate),
+
+                dietaryRestrictions: emptyToNull(data.dietaryRestrictions),
+                favorite_plant: emptyToNull(data.favorite_plant),
+                address: emptyToNull(data.address),
+
+                keyRequest:
+                    typeof data.keyRequest === "boolean" ? data.keyRequest : null,
+                has_a_second_job:
+                    typeof data.has_a_second_job === "boolean" ? data.has_a_second_job : null,
+                has_ssn:
+                    typeof data.has_ssn === "boolean" ? data.has_ssn : null,
+                major: emptyToNull(data.major) as any,
             };
 
             const res =
                 mode === "create"
                     ? await fetch("/api/users", {
                         method: "POST",
-                        headers: { "Content-Type": "application/json" },
+                        headers: {"Content-Type": "application/json"},
                         body: JSON.stringify(body),
                     })
-                    : await fetch(`/api/users/${initial?.mavId}`, {
+                    : await fetch(`/api/users/${initial?._id}`, {
                         method: "PUT",
-                        headers: { "Content-Type": "application/json" },
+                        headers: {"Content-Type": "application/json"},
                         body: JSON.stringify(body),
                     });
 
@@ -120,17 +161,34 @@ export default function UserUpsertForm({
                 form.reset({
                     firstName: "",
                     lastName: "",
-                    rolePosition: "Crew Member",
-                    graduationDate: undefined,
-                    dateHired: undefined,
-                    mavId: "",
-                    status: "Active",
+                    rolePosition: RolePosition.SetupCrew,
+
+                    mavId: null,
+                    w2w_employee_id: "",
+                    teams_id: "",
+
+                    status: UserStatus.Active,
                     phoneNumber: "",
                     studentEmail: "",
                     workEmail: "",
-                    dietaryRestrictions: "",
+
                     shirtSize: undefined,
+
+                    dateHired: null,
+                    graduationDate: null,
+                    birthday: null,
+                    mostRecentRaiseGranted: null,
+
+                    hourlyPayRate: null,
+
+                    dietaryRestrictions: "",
+                    favorite_plant: "",
+                    address: "",
+
                     keyRequest: false,
+                    has_a_second_job: false,
+                    has_ssn: false,
+                    major: "",
                 });
             }
         } catch (e: any) {
@@ -140,112 +198,184 @@ export default function UserUpsertForm({
         }
     };
 
-    // Helpers to pass disabled state to selects
-    const selectDisabled = (e?: string) => disabled ? undefined : e;
-
     return (
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 p-2">
+            {/* Name */}
             <div className="flex gap-2">
-                <Input placeholder="First Name" {...form.register("firstName")} disabled={disabled} />
-                <Input placeholder="Last Name" {...form.register("lastName")} disabled={disabled} />
+                <Input placeholder="First Name" {...form.register("firstName")} disabled={disabled}/>
+                <Input placeholder="Last Name" {...form.register("lastName")} disabled={disabled}/>
             </div>
 
-            {/* Mav ID: always locked in edit mode; also lock if disabled */}
-            <Input
-                placeholder="Mav ID"
-                {...form.register("mavId")}
-                disabled={disabled || mode === "edit"}
-            />
+            {/* IDs */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <Input
+                    placeholder="Mav ID"
+                    type="number"
+                    {...form.register("mavId", {
+                        setValueAs: (v) => (v === "" || v == null ? null : Number(v)),
+                    })}
+                    disabled={disabled || mode === "edit"}
+                />
+                <Input placeholder="W2W Employee ID" {...form.register("w2w_employee_id")} disabled={disabled}/>
+                <Input placeholder="Teams ID" {...form.register("teams_id")} disabled={disabled}/>
+            </div>
 
-            <Input placeholder="Student Email" {...form.register("studentEmail")} disabled={disabled} />
-            <Input placeholder="Work Email" {...form.register("workEmail")} disabled={disabled} />
-            <Input placeholder="Phone Number" {...form.register("phoneNumber")} disabled={disabled} />
+            {/* Contact */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <Input placeholder="Student Email" {...form.register("studentEmail")} disabled={disabled}/>
+                <Input placeholder="Work Email" {...form.register("workEmail")} disabled={disabled}/>
+                <Input placeholder="Phone Number" {...form.register("phoneNumber")} disabled={disabled}/>
+            </div>
 
-            <Controller
-                control={form.control}
-                name="graduationDate"
-                render={({ field }) => (
-                    <ShadcnDatePicker
-                        value={field.value}
-                        onChange={disabled ? () => {} : field.onChange}
-                        placeholder="Graduation Date"
+            {/* Role / Status / Shirt */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <SelectEnumField<Partial<UserClientDAO>, RolePosition>
+                    control={form.control}
+                    name="rolePosition"
+                    options={RolePosition}
+                    label="Role Position"
+                    placeholder="Role Position"
+                    clearable/>
+
+                <SelectEnumField<Partial<UserClientDAO>, UserStatus>
+                    control={form.control}
+                    name="status"
+                    options={UserStatus}
+                    label="Status"
+                    placeholder="Status"
+                    clearable
+                />
+
+                <SelectEnumField<Partial<UserClientDAO>, ShirtSize>
+                    control={form.control}
+                    name="shirtSize"
+                    options={ShirtSize}
+                    label="Shirt Size"
+                    placeholder="Shirt Size"
+                    clearable
+                />
+            </div>
+
+            {/* Dates (convert between DatePicker <-> ISO strings in the controller) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <Controller
+                    control={form.control}
+                    name="dateHired"
+                    render={({field}) => (
+                        <ShadcnDatePicker
+                            value={toDateOrUndefined(field.value)}
+                            onChange={disabled ? () => {
+                            } : (d) => field.onChange(d ? d.toISOString() : null)}
+                            placeholder="Hire Date"
+                            disabled={disabled}
+                        />
+                    )}
+                />
+                <Controller
+                    control={form.control}
+                    name="graduationDate"
+                    render={({field}) => (
+                        <ShadcnDatePicker
+                            value={toDateOrUndefined(field.value)}
+                            onChange={disabled ? () => {
+                            } : (d) => field.onChange(d ? d.toISOString() : null)}
+                            placeholder="Graduation Date"
+                            disabled={disabled}
+                        />
+                    )}
+                />
+                <Controller
+                    control={form.control}
+                    name="birthday"
+                    render={({field}) => (
+                        <ShadcnDatePicker
+                            value={toDateOrUndefined(field.value)}
+                            onChange={disabled ? () => {
+                            } : (d) => field.onChange(d ? d.toISOString() : null)}
+                            placeholder="Birthday"
+                            disabled={disabled}
+                        />
+                    )}
+                />
+            </div>
+
+            {/* Pay */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <Input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    placeholder="Hourly Pay Rate (USD)"
+                    {...form.register("hourlyPayRate", {
+                        setValueAs: (v) => (v === "" || v == null ? null : Number(v)),
+                    })}
+                    disabled={disabled}
+                />
+                <Controller
+                    control={form.control}
+                    name="mostRecentRaiseGranted"
+                    render={({field}) => (
+                        <ShadcnDatePicker
+                            value={toDateOrUndefined(field.value)}
+                            onChange={disabled ? () => {
+                            } : (d) => field.onChange(d ? d.toISOString() : null)}
+                            placeholder="Most Recent Raise Granted"
+                            disabled={disabled}
+                        />
+                    )}
+                />
+            </div>
+
+            {/* Misc */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <Input placeholder="Dietary Restrictions" {...form.register("dietaryRestrictions")}
+                       disabled={disabled}/>
+                <Input placeholder="Favorite Plant" {...form.register("favorite_plant")} disabled={disabled}/>
+                <Input placeholder="Major" {...form.register("major")} disabled={disabled}/>
+            </div>
+
+            <Input placeholder="Address" {...form.register("address")} disabled={disabled}/>
+
+            {/* Toggles */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="flex items-center gap-2">
+                    <Switch
+                        id="keyRequest"
+                        checked={!!form.watch("keyRequest")}
+                        onCheckedChange={(v) => !disabled && form.setValue("keyRequest", v, {shouldDirty: true})}
                         disabled={disabled}
                     />
-                )}
-            />
+                    <Label htmlFor="keyRequest">Key Request</Label>
+                </div>
 
-            <Controller
-                control={form.control}
-                name="dateHired"
-                render={({ field }) => (
-                    <ShadcnDatePicker
-                        value={field.value}
-                        onChange={disabled ? () => {} : field.onChange}
-                        placeholder="Hire Date"
+                <div className="flex items-center gap-2">
+                    <Switch
+                        id="has_a_second_job"
+                        checked={!!form.watch("has_a_second_job")}
+                        onCheckedChange={(v) => !disabled && form.setValue("has_a_second_job", v, {shouldDirty: true})}
                         disabled={disabled}
                     />
-                )}
-            />
+                    <Label htmlFor="has_a_second_job">Has a Second Job</Label>
+                </div>
 
-            {/* Role */}
-            <Select
-                onValueChange={(val) => selectDisabled(val) && form.setValue("rolePosition", val as UserFormData["rolePosition"])}
-                defaultValue={form.getValues("rolePosition")}
-            >
-                <SelectTrigger disabled={disabled}>
-                    <SelectValue placeholder="Role Position" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="Department Head">Department Head</SelectItem>
-                    <SelectItem value="Technician">Technician</SelectItem>
-                    <SelectItem value="Operations">Operations</SelectItem>
-                    <SelectItem value="Crew Member">Crew Member</SelectItem>
-                    <SelectItem value="Crew Lead">Crew Lead</SelectItem>
-                </SelectContent>
-            </Select>
-
-            {/* Status */}
-            <Select
-                onValueChange={(val) => selectDisabled(val) && form.setValue("status", val as UserFormData["status"])}
-                defaultValue={form.getValues("status")}
-            >
-                <SelectTrigger disabled={disabled}>
-                    <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="Active">Active</SelectItem>
-                    <SelectItem value="Inactive">Inactive</SelectItem>
-                </SelectContent>
-            </Select>
-
-            {/* Shirt Size */}
-            <Select
-                onValueChange={(val) =>
-                    selectDisabled(val) && form.setValue("shirtSize", val as UserFormData["shirtSize"])
-                }
-                defaultValue={form.getValues("shirtSize")}
-            >
-                <SelectTrigger disabled={disabled}>
-                    <SelectValue placeholder="Shirt Size" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="S">S</SelectItem>
-                    <SelectItem value="M">M</SelectItem>
-                    <SelectItem value="L">L</SelectItem>
-                    <SelectItem value="XL">XL</SelectItem>
-                    <SelectItem value="2XL">2XL</SelectItem>
-                </SelectContent>
-            </Select>
-
-            <Input
-                placeholder="Dietary Restrictions"
-                {...form.register("dietaryRestrictions")}
-                disabled={disabled}
-            />
+                <div className="flex items-center gap-2">
+                    <Switch
+                        id="has_ssn"
+                        checked={!!form.watch("has_ssn")}
+                        onCheckedChange={(v) => !disabled && form.setValue("has_ssn", v, {shouldDirty: true})}
+                        disabled={disabled}
+                    />
+                    <Label htmlFor="has_ssn">Has SSN</Label>
+                </div>
+            </div>
 
             {!hideSubmit && (
                 <Button type="submit" disabled={loading || disabled}>
-                    {loading ? (mode === "create" ? "Creating..." : "Saving...") : (submitLabel ?? (mode === "create" ? "Create User" : "Save Changes"))}
+                    {loading
+                        ? mode === "create"
+                            ? "Creating..."
+                            : "Saving..."
+                        : submitLabel ?? (mode === "create" ? "Create User" : "Save Changes")}
                 </Button>
             )}
         </form>
